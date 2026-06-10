@@ -306,7 +306,7 @@ public class AlgorithmTests
 
         var config = new CompressionConfig
         {
-            Algorithm = AlgorithmType.ADM
+            Algorithm = AlgorithmType.AdaptiveDeltaModulation
         };
 
         var compressed = algo.Compress(samples, config);
@@ -333,7 +333,7 @@ public class AlgorithmTests
 
         var config = new CompressionConfig
         {
-            Algorithm = AlgorithmType.ADM
+            Algorithm = AlgorithmType.AdaptiveDeltaModulation
         };
 
         var compressed = algo.Compress(samples, config);

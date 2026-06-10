@@ -81,7 +81,7 @@ public class DeltaModulation : ICompressionAlgorithm
 
         for (int i = 1; i < originalSampleCount; i++)
         {
-            ct.ThrowIfCancellationRequested();
+            //ct.ThrowIfCancellationRequested();
 
             int bitPos = i - 1;
             int byteIdx = headerBytes + bitPos / 8;

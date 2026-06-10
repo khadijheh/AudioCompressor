@@ -2,6 +2,7 @@ namespace AudioCompressor.Core.Models;
 
 public class CompressionResult
 {
+    public double SNR { get; set; }
     public string FileName { get; set; } = string.Empty;
     public long OriginalSize { get; set; }
     public long CompressedDataSize { get; set; }
@@ -23,4 +24,6 @@ public class CompressionResult
     public byte[]? CompressedBytes { get; set; }
     public string? CompressedFilePath { get; set; }
     public int OriginalSampleCount { get; set; }
+    public float[]? OriginalData { get; set; }
+    public float[]? DecompressedData { get; set; }
 }

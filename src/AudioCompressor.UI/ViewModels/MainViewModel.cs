@@ -24,6 +24,7 @@ public partial class MainViewModel : ObservableObject
     private Stopwatch _compressSw = new();
     private int _totalSamples;
 
+
     public MainViewModel()
     {
         _engine = new CompressionEngine(_wavService, _logger);
@@ -53,7 +54,12 @@ public partial class MainViewModel : ObservableObject
     {
         new("Nonlinear Quantization", AlgorithmType.NonlinearQuantization),
         new("DPCM", AlgorithmType.DPCM),
-        new("Delta Modulation", AlgorithmType.DeltaModulation)
+        new("Delta Modulation", AlgorithmType.DeltaModulation),
+        new("ADPCM", AlgorithmType.ADPCM),
+        new("TransformCodingDCT", AlgorithmType.TransformCodingDCT),
+        new("AdaptiveDeltaModulation", AlgorithmType.AdaptiveDeltaModulation)
+
+
     };
 
     public DisplayItem<AlgorithmType> SelectedAlgorithmItem
@@ -106,6 +112,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private double _currentCompressionPercent;
 
     [ObservableProperty] private int _plotRefreshVersion;
+    [ObservableProperty] private string _snrResult = "SNR: N/A";
 
     public List<double> ChartTimePoints { get; } = new();
     public List<double> ChartProgressPoints { get; } = new();
@@ -119,6 +126,9 @@ public partial class MainViewModel : ObservableObject
 
     // New: tracks whether a compressed file is selected
     [ObservableProperty] private bool _hasSelectedCompressedFile;
+    [ObservableProperty] private bool _hasCompressedFiles;
+
+    private string? _lastCompressedFilePath;
 
     private void OnLogMessage(string msg)
     {
@@ -192,38 +202,6 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Reset()
-    {
-        // Reset all UI state except loaded file info
-        _cts?.Cancel();
-        _playback_service.Stop();
-
-        IsCompressing = false;
-        ProgressValue =0;
-        CompressionStatus = string.Empty;
-        SpeedDisplay = string.Empty;
-        RatioDisplay = string.Empty;
-        _currentSpeed =0; // use backing field
-        _currentCompressionPercent =0; // use backing field
-        ChartTimePoints.Clear();
-        ChartProgressPoints.Clear();
-        ChartSpeedPoints.Clear();
-        LogMessages.Clear();
-        PlotRefreshVersion++;
-        CanCompress = IsFileLoaded;
-        StatusMessage = IsFileLoaded ? "File loaded" : "Reset";
-    }
-
-    [RelayCommand]
-    private void ResetCompress()
-    {
-        _cts?.Cancel();
-        _playback_service.Stop();
-        ResetInternal();
-        StatusMessage = "Drop a .WAV file to begin";
-    }
-
-    [RelayCommand]
     private void CancelCompress()
     {
         _cts?.Cancel();
@@ -244,73 +222,32 @@ public partial class MainViewModel : ObservableObject
     public void RefreshCompressedFiles()
     {
         var dir = GetCompressedDir();
+        var previousSelection = SelectedCompressedFile;
         CompressedFiles.Clear();
         if (Directory.Exists(dir))
         {
-            var files = Directory.GetFiles(dir, "*.comp").OrderByDescending(f => File.GetLastWriteTime(f));
+            var files = Directory.GetFiles(dir, "*.comp").OrderByDescending(f => File.GetLastWriteTime(f)).ToList();
             foreach (var f in files)
                 CompressedFiles.Add(f);
-        }
-    }
 
-    [RelayCommand]
-    private async Task DecompressSelected()
-    {
-        if (string.IsNullOrEmpty(SelectedCompressedFile)) return;
-
-        var saveDlg = new SaveFileDialog
-        {
-            Title = "Save decompressed WAV",
-            FileName = Path.GetFileNameWithoutExtension(SelectedCompressedFile) + "_decompressed.wav",
-            DefaultExt = ".wav",
-            Filter = "WAV files (*.wav)|*.wav|All files (*.*)|*.*"
-        };
-        var saveRes = saveDlg.ShowDialog();
-        if (saveRes != true) return;
-        var outPath = saveDlg.FileName;
-
-        _cts = new CancellationTokenSource();
-        var token = _cts.Token;
-
-        try
-        {
-            IsCompressing = true;
-            StatusMessage = "Decompressing...";
-            ProgressValue =0;
-
-            var progress = new Progress<double>(p =>
+            if (CompressedFiles.Count > 0)
             {
-                Application.Current.Dispatcher.Invoke(() =>
+                if (string.IsNullOrEmpty(previousSelection) || !CompressedFiles.Contains(previousSelection))
                 {
-                    ProgressValue = p;
-                    CompressionStatus = $"{p *100:F0}%";
-                });
-            });
-
-            var result = await Task.Run(() => _engine.DecompressCompressedFile(SelectedCompressedFile!, outPath, token, progress), token);
-
-            StatusMessage = $"Decompressed to: {result.OutputPath}";
-            RefreshCompressedFiles();
-
-            var reportVm = new ReportViewModel(result);
-            var reportWnd = new Views.ReportWindow { DataContext = reportVm };
-            reportWnd.ShowDialog();
+                    SelectedCompressedFile = CompressedFiles.First();
+                }
+            }
+            else
+            {
+                SelectedCompressedFile = null;
+            }
         }
-        catch (OperationCanceledException)
+        else
         {
-            StatusMessage = "Decompression cancelled";
+            SelectedCompressedFile = null;
         }
-        catch (Exception ex)
-        {
-            StatusMessage = $"Decompression error: {ex.Message}";
-        }
-        finally
-        {
-            IsCompressing = false;
-            CanCompress = IsFileLoaded;
-            _cts?.Dispose();
-            _cts = null;
-        }
+
+        HasCompressedFiles = CompressedFiles.Count > 0;
     }
 
     [RelayCommand]
@@ -381,6 +318,7 @@ public partial class MainViewModel : ObservableObject
                 _currentSpeed = speed; // backing field
                 _currentCompressionPercent = value *100; // backing field
 
+
                 ChartTimePoints.Add(elapsed);
                 ChartProgressPoints.Add(value *100);
                 ChartSpeedPoints.Add(speed);
@@ -398,34 +336,23 @@ public partial class MainViewModel : ObservableObject
 
             if (!token.IsCancellationRequested)
             {
+                SnrResult = $"SNR: {result.SNR:F2} dB";
                 CompressionStatus = "Complete!";
-                StatusMessage = $"Compression done: {result.SavingsPercent:F1}% saved, {result.Elapsed.TotalSeconds:F2}s";
+                StatusMessage = $"Compression done: {result.CompressionRatio:F2}x, saved {FormatFileSize(result.CompressedDataSize)}. Decompressed WAV at {result.OutputPath}";
                 RatioDisplay = $"Ratio: {result.CompressionRatio:F2}x, Saved: {result.SavingsPercent:F1}%";
                 SpeedDisplay = $"{_totalSamples / result.Elapsed.TotalSeconds:N0} samples/sec";
                 ProgressValue = 1.0;
 
-                // offer SaveFileDialog to let user pick output path for decompressed WAV output
-                var savePath = ShowSaveFileDialog(Path.GetFileName(result.OutputPath));
-                if (!string.IsNullOrEmpty(savePath))
-                {
-                    // move the temp output to user's chosen path
-                    try
-                    {
-                        File.Copy(result.OutputPath, savePath, true);
-                        result.OutputPath = savePath;
-                    }
-                    catch (Exception ex)
-                    {
-                        StatusMessage = $"Save failed: {ex.Message}";
-                    }
-                }
+                _lastCompressedFilePath = result.CompressedFilePath;
 
                 var reportVm = new ReportViewModel(result);
                 var reportWnd = new Views.ReportWindow { DataContext = reportVm };
                 reportWnd.ShowDialog();
 
-                // refresh list of compressed files
+                // refresh list of compressed files and keep the latest file selected
+                _lastCompressedFilePath = result.CompressedFilePath;
                 RefreshCompressedFiles();
+                SelectedCompressedFile = _lastCompressedFilePath;
             }
         }
         catch (OperationCanceledException)
@@ -451,79 +378,7 @@ public partial class MainViewModel : ObservableObject
                 try { File.Delete(tempResampled); } catch { }
             }
         }
-    }
 
-    [RelayCommand]
-    private async Task Decompress()
-    {
-        // Let user choose a .comp/.bin file to decompress
-        var ofd = new OpenFileDialog
-        {
-            Title = "Open compressed file",
-            Filter = "Compressed files (*.comp;*.bin)|*.comp;*.bin|All files (*.*)|*.*"
-        };
-
-        var ofdRes = ofd.ShowDialog();
-        if (ofdRes != true) return;
-
-        var compPath = ofd.FileName;
-
-        // Ask where to save the decompressed WAV
-        var saveDlg = new SaveFileDialog
-        {
-            Title = "Save decompressed WAV",
-            FileName = Path.GetFileNameWithoutExtension(compPath) + "_decompressed.wav",
-            DefaultExt = ".wav",
-            Filter = "WAV files (*.wav)|*.wav|All files (*.*)|*.*"
-        };
-
-        var saveRes = saveDlg.ShowDialog();
-        if (saveRes != true) return;
-
-        var outPath = saveDlg.FileName;
-
-        _cts = new CancellationTokenSource();
-        var token = _cts.Token;
-
-        try
-        {
-            IsCompressing = true;
-            StatusMessage = "Decompressing...";
-            ProgressValue =0;
-
-            var progress = new Progress<double>(p =>
-            {
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    ProgressValue = p;
-                    CompressionStatus = $"{p *100:F0}%";
-                });
-            });
-
-            var result = await Task.Run(() => _engine.DecompressCompressedFile(compPath, outPath, token, progress), token);
-
-            StatusMessage = $"Decompressed to: {result.OutputPath}";
-            RefreshCompressedFiles();
-
-            var reportVm = new ReportViewModel(result);
-            var reportWnd = new Views.ReportWindow { DataContext = reportVm };
-            reportWnd.ShowDialog();
-        }
-        catch (OperationCanceledException)
-        {
-            StatusMessage = "Decompression cancelled";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"Decompression error: {ex.Message}";
-        }
-        finally
-        {
-            IsCompressing = false;
-            CanCompress = IsFileLoaded;
-            _cts?.Dispose();
-            _cts = null;
-        }
     }
 
     [RelayCommand]
@@ -563,13 +418,16 @@ public partial class MainViewModel : ObservableObject
     private void ResetInternal()
     {
         _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = null;
+        _playback_service.Stop();
         _currentFilePath = null;
         _currentFileInfo = null;
         IsFileLoaded = false;
         IsPlaying = false;
         CanCompress = false;
         IsCompressing = false;
-        ProgressValue =0;
+        ProgressValue = 0;
         WindowTitle = "Audio Compressor";
         DropZoneText = "Drop a .WAV file here";
         FileName = "-";
@@ -579,14 +437,54 @@ public partial class MainViewModel : ObservableObject
         Channels = "-";
         BitRate = "-";
         Encoding = "-";
+        OriginalBitsLabel = "16 bits / sample";
+        SelectedAlgorithm = AlgorithmType.NonlinearQuantization;
+        SelectedLawType = MuLawType.MuLaw;
+        TargetBits = 8;
+        StepSize = 0.02;
+        UseAdaptiveDelta = false;
+        PredictorOrder = 1;
+        TargetSampleRate = 0;
+        MuLawMu = 255.0;
+        ALawA = 87.6;
         CompressionStatus = "";
         SpeedDisplay = "";
         RatioDisplay = "";
+        SelectedCompressedFile = null;
+        _lastCompressedFilePath = null;
+        CompressedFiles.Clear();
+        HasCompressedFiles = false;
         ChartTimePoints.Clear();
         ChartProgressPoints.Clear();
         ChartSpeedPoints.Clear();
         LogMessages.Clear();
         PlotRefreshVersion++;
+        StatusMessage = "Drop a .WAV file to begin";
+    }
+
+    private void ResetLoadedFileState()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = null;
+        _playback_service.Stop();
+        IsPlaying = false;
+        IsCompressing = false;
+        CanCompress = IsFileLoaded;
+        ProgressValue = 0;
+        CompressionStatus = "";
+        SpeedDisplay = "";
+        RatioDisplay = "";
+        SelectedCompressedFile = null;
+        _lastCompressedFilePath = null;
+        CompressedFiles.Clear();
+        HasCompressedFiles = false;
+        ChartTimePoints.Clear();
+        ChartProgressPoints.Clear();
+        ChartSpeedPoints.Clear();
+        LogMessages.Clear();
+        PlotRefreshVersion++;
+        StatusMessage = "File loaded";
     }
 
     private static string FormatFileSize(long bytes)
@@ -612,20 +510,28 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void DeleteCompressed()
+    private void RemoveFile()
     {
-        if (string.IsNullOrEmpty(SelectedCompressedFile)) return;
-        try
+        _cts?.Cancel();
+        _playback_service.Stop();
+        ResetInternal();
+        StatusMessage = "Audio file removed.";
+    }
+
+    [RelayCommand]
+    private void Reset()
+    {
+        _cts?.Cancel();
+        _playback_service.Stop();
+        if (IsFileLoaded)
         {
-            File.Delete(SelectedCompressedFile);
-            SelectedCompressedFile = null;
-            StatusMessage = "Deleted compressed file";
-            RefreshCompressedFiles();
+            ResetLoadedFileState();
         }
-        catch (Exception ex)
+        else
         {
-            StatusMessage = $"Delete failed: {ex.Message}";
+            ResetInternal();
         }
+        StatusMessage = "Reset complete.";
     }
 
     [RelayCommand]
@@ -660,6 +566,27 @@ public partial class MainViewModel : ObservableObject
         catch (Exception ex)
         {
             StatusMessage = $"Read metadata failed: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void DeleteCompressed()
+    {
+        if (string.IsNullOrEmpty(SelectedCompressedFile)) return;
+
+        try
+        {
+            File.Delete(SelectedCompressedFile);
+            if (string.Equals(_lastCompressedFilePath, SelectedCompressedFile, StringComparison.OrdinalIgnoreCase))
+            {
+                _lastCompressedFilePath = null;
+            }
+            StatusMessage = "Deleted compressed file.";
+            RefreshCompressedFiles();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Delete failed: {ex.Message}";
         }
     }
 }

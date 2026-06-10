@@ -15,7 +15,11 @@ public class CompressionEngine
     {
         [AlgorithmType.NonlinearQuantization] = new NonlinearQuantization(),
         [AlgorithmType.DPCM] = new DPCM(),
-        [AlgorithmType.DeltaModulation] = new DeltaModulation()
+        [AlgorithmType.DeltaModulation] = new DeltaModulation(),
+        [AlgorithmType.ADPCM] = new ADPCM(),
+        [AlgorithmType.TransformCodingDCT] = new TransformCodingDCT(),
+        [AlgorithmType.AdaptiveDeltaModulation] = new AdaptiveDeltaModulation()
+
     };
 
     public CompressionEngine(IWavService wavService, AsyncLogger logger)
@@ -78,7 +82,7 @@ public class CompressionEngine
         var compressed = algorithm.Compress(samples, config, compressionProgress, ct);
         Log($"Compressed: {compressed.Length} bytes ({compressed.Length * 8} bits)");
 
-        ct.ThrowIfCancellationRequested();
+        //ct.ThrowIfCancellationRequested();
 
         double ratio = (double)originalDataBytes / compressed.Length;
         Log($"Ratio: {ratio:F3}x, savings: {(1.0 - (double)compressed.Length / originalDataBytes) * 100:F1}%");
@@ -92,7 +96,9 @@ public class CompressionEngine
         });
 
         var reconstructed = algorithm.Decompress(compressed, config, samples.Length, decompressionProgress, ct);
-
+        result.OriginalData = samples;
+        result.DecompressedData = reconstructed;
+        result.SNR = CalculateSNR(samples, reconstructed);
         // keep compressed bytes in memory for session use
         result.CompressedBytes = compressed;
         result.OriginalSampleCount = samples.Length;
@@ -125,8 +131,10 @@ public class CompressionEngine
             bw.Write(compressed);
         }
 
-        Log($"Compressed binary saved: {compPath}");
+        var savedCompressedSize = new FileInfo(compPath).Length;
+        Log($"Compressed binary saved: {compPath} ({savedCompressedSize} bytes)");
         result.CompressedFilePath = compPath;
+        result.CompressedDataSize = savedCompressedSize;
 
         var outputDir = Path.Combine(Path.GetDirectoryName(inputPath) ?? ".", "compressed_output");
         Directory.CreateDirectory(outputDir);
@@ -336,7 +344,9 @@ public class CompressionEngine
         });
 
         var reconstructed = algorithm.Decompress(compressed, config, samples.Length, decompressionProgress, ct);
-
+        result.OriginalData = samples;
+        result.DecompressedData = reconstructed;
+        result.SNR = CalculateSNR(samples, reconstructed);
         // keep compressed bytes in memory for session use
         result.CompressedBytes = compressed;
         result.OriginalSampleCount = samples.Length;
@@ -407,7 +417,33 @@ public class CompressionEngine
 
         return result;
     }
+    public static double CalculateSNR(float[] original, float[] decompressed)
+    {
+        if (original == null || decompressed == null)
+            return 0;
 
+        int count = Math.Min(original.Length, decompressed.Length);
+
+        double signalPower = 0.0;
+        double noisePower = 0.0;
+
+        for (int i = 0; i < count; i++)
+        {
+            double signal = original[i];
+            double error = original[i] - decompressed[i];
+
+            signalPower += signal * signal;
+            noisePower += error * error;
+        }
+
+        if (signalPower <= 0)
+            return 0;
+
+        if (noisePower <= 1e-20)
+            return 100.0;
+
+        return 10.0 * Math.Log10(signalPower / noisePower);
+    }
     public CompressionResult ReadCompressedMetadata(string compressedFilePath)
     {
         if (!File.Exists(compressedFilePath))

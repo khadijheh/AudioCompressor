@@ -245,4 +245,100 @@ public class AlgorithmTests
         double snr = ComputeSNR(samples, decompressed);
         Assert.True(snr >= 50, $"Constant DPCM should be near perfect, SNR={snr:F1}dB");
     }
+    [Fact]
+    public void TransformCodingDCT_8Bit_RoundTrip_CompressionWorks()
+    {
+        // توليد موجة جيبية بسيطة بتردد 440Hz
+        var samples = GenerateSineWave(44100, 1, 440);
+        var algo = new TransformCodingDCT();
+
+        var config = new CompressionConfig
+        {
+            // تأكدي من إضافة هذا الخيار إلى AlgorithmType Enum
+            Algorithm = AlgorithmType.TransformCodingDCT,
+            TargetBitsPerSample = 8
+        };
+
+        var compressed = algo.Compress(samples, config);
+        var decompressed = algo.Decompress(compressed, config, samples.Length);
+
+        // حساب الطول المبطن (Padded) لأن الخوارزمية تقسم البيانات لكتل بحجم 64
+        int blockSize = 64;
+        int paddedLength = ((samples.Length + blockSize - 1) / blockSize) * blockSize;
+
+        // الحجم المتوقع: 4 بايت للترويسة (Max Value) + حجم البيانات المضغوطة
+        int expectedBytes = 4 + (paddedLength * config.TargetBitsPerSample + 7) / 8;
+
+        Assert.Equal(samples.Length, decompressed.Length);
+        Assert.True(compressed.Length <= expectedBytes,
+            $"حجم الملف المضغوط {compressed.Length} أكبر من المتوقع {expectedBytes}");
+
+        double snr = ComputeSNR(samples, decompressed);
+
+        // نسبة الإشارة إلى الضوضاء يجب أن تكون جيدة لإشارة بسيطة
+        Assert.True(snr >= 25, $"SNR={snr:F1}dB منخفض جداً لخوارزمية DCT");
+    }
+    [Fact]
+    public void ADPCM_RoundTrip_CompressionWorks()
+    {
+        var samples = GenerateSweep(44100, 1);
+        var algo = new ADPCM();
+        var config = new CompressionConfig { Algorithm = AlgorithmType.ADPCM }; // تأكدي من إضافة ADPCM لـ Enum
+
+        var compressed = algo.Compress(samples, config);
+        var decompressed = algo.Decompress(compressed, config, samples.Length);
+
+        // التحقق من أن حجم الملف المضغوط هو تقريباً الربع (4 بت للعينة) + 4 بايت للترويسة
+        int expectedBytes = 4 + (samples.Length + 1) / 2;
+
+        Assert.Equal(samples.Length, decompressed.Length);
+        Assert.Equal(expectedBytes, compressed.Length);
+
+        double snr = ComputeSNR(samples, decompressed);
+        Assert.True(snr >= 20, $"SNR={snr:F1}dB too low for ADPCM on sweep");
+    }
+    [Fact]
+    public void ADM_RoundTrip_CompressionWorks()
+    {
+        var samples = GenerateSineWave(8000, 1, 400);
+
+        var algo = new AdaptiveDeltaModulation();
+
+        var config = new CompressionConfig
+        {
+            Algorithm = AlgorithmType.ADM
+        };
+
+        var compressed = algo.Compress(samples, config);
+        var decompressed = algo.Decompress(compressed, config, samples.Length);
+
+        Assert.Equal(samples.Length, decompressed.Length);
+
+        // 8 بايت Header + 1 bit لكل sample
+        int expectedBytes = 8 + (samples.Length + 7) / 8;
+
+        Assert.Equal(expectedBytes, compressed.Length);
+
+        double snr = ComputeSNR(samples, decompressed);
+
+        Assert.True(snr > 0,
+            $"ADM reconstruction failed, SNR={snr:F2}dB");
+    }
+    [Fact]
+    public void ADM_NoiseInput_NoCrash()
+    {
+        var samples = GenerateNoise(10000);
+
+        var algo = new AdaptiveDeltaModulation();
+
+        var config = new CompressionConfig
+        {
+            Algorithm = AlgorithmType.ADM
+        };
+
+        var compressed = algo.Compress(samples, config);
+        var decompressed = algo.Decompress(compressed, config, samples.Length);
+
+        Assert.Equal(samples.Length, decompressed.Length);
+    }
 }

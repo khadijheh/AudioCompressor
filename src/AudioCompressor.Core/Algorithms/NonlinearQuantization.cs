@@ -17,7 +17,7 @@ public class NonlinearQuantization : ICompressionAlgorithm
 
         for (int i = 0; i < totalSamples; i++)
         {
-            ct.ThrowIfCancellationRequested();
+            //ct.ThrowIfCancellationRequested();
 
             double companded = Compand(samples[i], config);
             int quantized = (int)Math.Round((companded + 1.0) / 2.0 * (levels - 1));
@@ -58,7 +58,7 @@ public class NonlinearQuantization : ICompressionAlgorithm
 
         for (int i = 0; i < originalSampleCount; i++)
         {
-            ct.ThrowIfCancellationRequested();
+            //ct.ThrowIfCancellationRequested();
 
             int bitPos = i * bits;
             int byteIdx = bitPos / 8;

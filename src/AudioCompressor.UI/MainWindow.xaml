@@ -158,8 +158,8 @@
                     </Grid.RowDefinitions>
                     <Grid Grid.Row="0">
                         <TextBlock Text="&#x1F4C2;  Drag &amp; Drop .WAV file here"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   FontSize="16" Foreground="#6699FF" Opacity="0.6">
+                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                FontSize="16" Foreground="#6699FF" Opacity="0.6">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Visibility" Value="Visible"/>
@@ -209,11 +209,12 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="95"/>
                             <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="File:" Style="{StaticResource PropLabel}"/>
                         <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding FileName}" Style="{StaticResource PropValue}"/>
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Size:" Style="{StaticResource PropLabel}" Margin="0,3,0,0"/>
-                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding FileSize}" Style="{StaticResource PropValue}" Margin="0,3,0,0"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding FileSize}" Style="{StaticResource PropValue}" Margin="0,3,0,0"/>
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="Duration:" Style="{StaticResource PropLabel}" Margin="0,3,0,0"/>
                         <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Duration}" Style="{StaticResource PropValue}" Margin="0,3,0,0"/>
                         <TextBlock Grid.Row="3" Grid.Column="0" Text="Sample Rate:" Style="{StaticResource PropLabel}" Margin="0,3,0,0"/>
@@ -230,10 +231,16 @@
 
             <!-- Output Info Card -->
             <Border Style="{StaticResource Card}" Margin="0,0,0,8">
-                <StackPanel>
-                    <TextBlock Text="Output Info" Style="{StaticResource Heading}" Margin="0,0,0,8"/>
-                    <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource SubHeading}" TextWrapping="Wrap"/>
-                </StackPanel>
+				<StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="Output Info" Style="{StaticResource Heading}" Margin="0,0,0,8"/>
+                        <TextBlock Text="{Binding StatusMessage}" Style="{StaticResource SubHeading}" TextWrapping="Wrap"/>
+                    </StackPanel>
+				    <StackPanel Margin="0,10,0,0">
+					    <TextBlock Text="Compression Quality:" FontWeight="Bold" Foreground="Gray"/>
+					    <TextBlock Text="{Binding SnrResult}" FontSize="16" Foreground="Green"/>
+				    </StackPanel>
+				</StackPanel>
             </Border>
 
             <!-- Compressed Files Management Card -->
@@ -259,7 +266,6 @@
                         <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
                             <Button Content="Open Folder" Style="{StaticResource SecondaryButton}" Command="{Binding OpenCompressedFolderCommand}" Margin="0,0,6,0"/>
                             <Button Content="Show Info" Style="{StaticResource SecondaryButton}" Command="{Binding ShowCompressedMetadataCommand}" Margin="0,0,6,0"/>
-                            <Button Content="🔓 Decompress" Style="{StaticResource PrimaryButton}" Command="{Binding DecompressSelectedCommand}" IsEnabled="{Binding HasSelectedCompressedFile}" Margin="0,0,6,0" Background="#4CAF50"/>
                             <Button Content="Delete" Style="{StaticResource SecondaryButton}" Command="{Binding DeleteCompressedCommand}" IsEnabled="{Binding HasSelectedCompressedFile}"/>
                         </StackPanel>
                     </Grid>
@@ -315,7 +321,11 @@
                         <Button Content="↺ Reset" Style="{StaticResource ActionButton}"
                                 Command="{Binding ResetCommand}"
                                 IsEnabled="{Binding IsFileLoaded}"
-                                Background="#FF9800" Foreground="White"/>
+                                Background="#FF9800" Foreground="White" Margin="0,0,6,0"/>
+                        <Button Content="🗑️ Remove File" Style="{StaticResource ActionButton}"
+                                Command="{Binding RemoveFileCommand}"
+                                IsEnabled="{Binding IsFileLoaded}"
+                                Background="#9E9E9E" Foreground="White" Margin="0,0,6,0"/>
                         <Button Content="✕ Cancel" Style="{StaticResource ActionButton}"
                                 Command="{Binding CancelCompressCommand}"
                                 IsEnabled="{Binding IsCompressing}"

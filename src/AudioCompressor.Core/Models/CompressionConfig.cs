@@ -4,7 +4,10 @@ public enum AlgorithmType
 {
     NonlinearQuantization,
     DPCM,
-    DeltaModulation
+    DeltaModulation,
+    TransformCodingDCT,
+    ADPCM,
+    AdaptiveDeltaModulation
 }
 
 public enum MuLawType
